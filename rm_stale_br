@@ -1,0 +1,79 @@
+#!/usr/bin/env bash 
+
+set -e 
+set -o pipefail
+
+LISTONLY=0
+DELETE=0
+
+function ARG_PARSE(){
+
+	while [[ $# -gt 0 ]]; do
+	  case $1 in
+	    -l|--list)
+	      LISTONLY=1
+	      ;;
+	    -d|--delete)
+	      DELETE=1
+	      ;;
+	    -*|--*)
+	      echo "Unknown option $1"
+	      exit 1
+	      ;;
+	    *)
+	      POSITIONAL_ARGS+=("$1") # save positional arg
+	      ;;
+	  esac
+	  shift 
+	done
+}
+
+
+function DELETE_BRANCH(){
+	
+	echo -e "${1}:\n  $(git push origin -d ${1##origin/} 2>&1 ) \n"  | tee -a "$LOG_PATH/${REPO_NAME}/${TIMESTAMP}.txt" &
+
+}
+
+function GET_STALE(){
+
+	for branch in $( git --no-pager branch --remote | grep  -i  -e 'task' -e 'Feature' -e 'bug' -e 'fix'  ); do
+
+		if  [[ -z "$( git log -1 --since="3 months ago" -s "$branch" )"  ]] ; then 
+
+				# echo  "$branch = <$(git log -1  --pretty="%H %an %ar %ai" -s ${branch##origin/})>"
+				if [[ $DELETE -eq 1 ]]; then  {
+
+					DELETE_BRANCH "$branch" 
+					continue
+				}
+				fi
+
+				echo  "$branch = <$(git log -1  --pretty="%H %an %ar %ai" -s ${branch})>" 
+
+
+			fi
+	done
+	wait
+
+}
+
+
+function main(){
+
+	[[ "$(git rev-parse --is-inside-work-tree 2> /dev/null )" != "true"  ]] && return 1
+
+	ARG_PARSE "$@"	
+
+	REPO_NAME="$(basename `git rev-parse --show-toplevel`)"
+	LOG_PATH="$HOME/logs/git_rm_stale"
+	TIMESTAMP="$( date +'%m-%d-%y_%I-%M-%p')"
+	
+	! [[ -d  "$LOG_PATH"  ]] && mkdir -p "$LOG_PATH"
+	! [[ -d  "${LOG_PATH}/${REPO_NAME}"  ]] && mkdir -p "$LOG_PATH/$REPO_NAME"
+
+	GET_STALE
+
+}
+
+main "$@"
